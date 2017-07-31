@@ -3,144 +3,25 @@
 library(tensorflow)
 library(reticulate)
 library(feather)
-
+source("AIA2.R")
 # Create Data
 lf <- list.files("/home/thernandez/FeatherAIA2014/")
-astropy <- import("astropy")
+y.mat <- read.csv("Flux_FeatherAIA2014.csv")
+if(length(lf) == nrow(y.mat)){cat("Flux and AIA data matches.")}
 
-# Creates an index of date-times with all 8 channels and lists them as a matrix
-# One row for time, one col for channel
-all.channel.index.POSIX <- as.POSIXct(read.csv("/home/thernandez/AIA_index_allChannels.csv",
-                                               stringsAsFactors = FALSE)[[1]],
-                                      tz = "UTC")
-
-all.channel.index <- outer(format(all.channel.index.POSIX, "%Y%m%d_%H%M"),
-                           c("_0094", "_0131", "_0171", "_0193",
-                             "_0211", "_0304", "_0335", "_1600"),
-                           paste, sep = "")
-
-y.mat <- read.csv("/home/thernandez/Flux_2010_2017_allY.csv", stringsAsFactors = F)
-y.mat$Time <- as.POSIXct(y.mat$Time, tz = "UTC")
-good.inds <- which(all.channel.index.POSIX %in% y.mat$Time)
-y.mat <- y.mat[good.inds, ]
-good.inds2 <- which(!is.na(y.mat[, "Flux"]))
-y.mat <- y.mat[good.inds2, ]
-
-# FIXX!!!!!!!!
-# Double check things all line up.
-# if(length(good.inds) != nrow(all.channel.index)){stop("Not same!!!")}
-
-# Extracts matrices from fits file
-fits2mat <- function(filename){
-  temp <- astropy$io$fits$open(filename)
-  temp$verify("fix")
-  exp.time <- as.numeric(substring(strsplit(as.character(temp[[1]]$header),
-                                            "EXPTIME")[[1]][2], 4, 12))
-  temp.mat <- temp[[1]]$data
-  temp.mat[temp.mat <= 0] <- 1
-  log(t(temp.mat / exp.time))
-}
-
-###### Example usage:
-temp.x <- fits2mat(filename = paste0("/home/thernandez/AIA2014/", lf[2]))
-image(temp.x, zlim = c(-1, 5))
-######
-
-# Creates a 3D matrix of all 8 channels
-indexTo3Dmat <- function(channel.index, channels.used = c(3), feather = TRUE){
-  # array(., dim = c(1024, 1024, length(channels.used)))
-  if(feather == TRUE){
-    temp.mat <- as.matrix(read_feather(paste0("/home/thernandez/FeatherAIA2014/",
-                                              channel.index)))[, channels.used]
-  } else {
-    temp.mat <- matrix(NA, nrow = 1024 ^ 2, ncol = length(channels.used))
-    for(i in 1:length(channels.used)){
-      temp.mat[, i] <- unlist(fits2mat(paste0("/home/thernandez/AIA2014/AIA",
-                                              channel.index[channels.used],
-                                              ".fits")))
-    }
-  }
-  c(temp.mat)
-}
-
-###### Example usage:
-# temp = indexTo3Dmat(channel.index = all.channel.index[1, ])
-# temp2 = apply(temp, c(1, 2), mean)
-# image(temp2, zlim = c(10, 100))
-######
-# Creates collection of 3D input matrices and corresponding Flux outputs
-# Use for each to parallelize
-mini.batch <- function(indices = 1:5,
-                       target.y = c("Flux", "Flux_1h_1h12m",
-                                    "Flux_1h_2h", "Flux_1h_1d1h_top1"),
-                       normalization.x = TRUE, normalization.y = FALSE,
-                       log.x = TRUE, log.y = TRUE,
-                       channels.used = c(3), feather = TRUE){
-  x = matrix(NA, nrow = length(indices),
-             ncol = 1024 ^ 2 * length(channels.used))
-  y = as.matrix(y.mat[indices, target.y])
-  # cat("\n", dim(x))
-  for(i in 1:length(indices)){
-    x[i, ] <- c(indexTo3Dmat(channel.index = lf[indices[i]], #format(all.channel.index.POSIX, "%Y%m%d_%H%M"),
-                             channels.used = channels.used))
-  }
-  if(log.x == TRUE){
-    x <- log(x)
-  }
-  if(normalization.x == TRUE){
-    x <- matrix(scale(c(x)), nrow = length(indices))
-  }
-  if(log.y == TRUE){
-    y <- log(y)
-  }
-  if(normalization.y == TRUE){
-    y <- matrix(scale(y), nrow = length(indices))
-  }
-  mb <- list(x = x, y = y)
-}
-
-###### Example usage:
-temp = mini.batch(1:5, "Flux")
+last.train.ind <- round(length(lf) * 4 / 5)
 #############################################################
 #############################################################
 sess <- tf$InteractiveSession()
+# sess <- tf$Session()
 
 x <- tf$placeholder(tf$float32, shape(NULL, as.integer(1048576)))
 y <- tf$placeholder(tf$float32, shape(NULL, 1L))
-
-weight_variable <- function(shape) {
-  initial <- tf$truncated_normal(shape, stddev=0.1)
-  tf$Variable(initial)
-}
-
-bias_variable <- function(shape) {
-  initial <- tf$constant(0.1, shape=shape)
-  tf$Variable(initial)
-}
-
-conv2d <- function(x, W, strideX = 50, strideY = 50) {
-  tf$nn$conv2d(x, W,
-               strides=c(1L, as.integer(strideX), as.integer(strideY), 1L),
-               padding='SAME')
-}
-
-max_pool_2x2 <- function(x, ksizeX = 50, ksizeY = 50,
-                         strideX = 50, strideY = 50) {
-  tf$nn$max_pool(
-    x, 
-    ksize=c(1L, as.integer(ksizeX), as.integer(ksizeY), 1L),
-    strides=c(1L, as.integer(strideX), as.integer(strideY), 1L), 
-    padding='SAME')
-}
-
 x_image <- tf$reshape(x, shape(-1L, 1024L, 1024L, 1L))
 
-#############################################################
-# Need to switch this all in-memory for speed
-#############################################################
-CV.mat <- as.data.frame(matrix(0, nrow = 100, ncol = 21))
+CV.mat <- as.data.frame(matrix(0, nrow = 25, ncol = 22))
 colnames(CV.mat) <- c("LogRMSE", "RMSE",
-                      "learning.rate", "fcl.num.units", "batch.size",
+                      "log.y", "learning.rate", "fcl.num.units", "batch.size",
                       "conv.window.size1", "conv.depth1",
                       "conv.window.size2", "conv.depth2",
                       "strideXconv2D1", "strideYconv2D1",
@@ -148,6 +29,7 @@ colnames(CV.mat) <- c("LogRMSE", "RMSE",
                       "strideXconv2D2", "strideYconv2D2", "ksizeX2", "ksizeY2",
                       "strideX2", "strideY2")
 set.seed(1)
+CV.mat[, "log.y"] <- sample(0:1, nrow(CV.mat), replace = T)
 CV.mat[, "learning.rate"] <- 2 ^ -sample(8:15, nrow(CV.mat), replace = T)
 CV.mat[, "fcl.num.units"] <- sample(32:256, nrow(CV.mat), replace = T)
 CV.mat[, "batch.size"] <- sample(16:64, nrow(CV.mat), replace = T)
@@ -168,12 +50,11 @@ CV.mat[, "ksizeY2"] = sample(8:64, nrow(CV.mat), replace = T)
 CV.mat[, "strideX2"] = sample(2:64, nrow(CV.mat), replace = T)
 CV.mat[, "strideY2"] = sample(2:64, nrow(CV.mat), replace = T)
 
-# test.batch <- mini.batch(indices = 2821:3525, target.y = "Flux")
-
 for(i in 1:nrow(CV.mat)){
   
   cat(paste0(colnames(CV.mat), ":", CV.mat[i, ]), "\n")
   set.seed(1)
+  log.y <- as.logical(CV.mat$log.y[i])
   conv.window.size1 <- as.integer(CV.mat$conv.window.size1[i])
   conv.depth1 <- as.integer(CV.mat$conv.depth1[i])
   conv.window.size2 <- as.integer(CV.mat$conv.window.size2[i])
@@ -239,14 +120,19 @@ for(i in 1:nrow(CV.mat)){
   
   sess$run(tf$global_variables_initializer())
   
-  train.mat <- matrix(0, nrow = 2820/batch.size, ncol = 2)
+  train.mat <- matrix(0, nrow = ceiling(last.train.ind/batch.size), ncol = 2)
   colnames(train.mat) <- c("LogRMSE", "RMSE")
   test.err.calc <- TRUE
 
-  for (j in 1:(2820/batch.size)) {
-    batch <- mini.batch(indices = (j - 1) * batch.size + 1:batch.size,
-                        target.y = "Flux")
-    # cat(".")
+  # Iterate through mini-batches
+  for (j in 1:ceiling(last.train.ind/batch.size)) {
+    inds <- (j - 1) * batch.size + 1:batch.size
+    if(inds[length(inds)] > last.train.ind){
+      inds <- inds[-which(inds > last.train.ind)]
+    }
+    batch <- mini.batch(indices = inds, lf = lf,
+                        target.y = "Flux", log.y = log.y)
+
     train$run(feed_dict = dict(x = batch[[1]], y = batch[[2]], keep_prob = 0.5))
 
     train_accuracy <- loss$eval(feed_dict = dict(x = batch[[1]],
@@ -255,10 +141,15 @@ for(i in 1:nrow(CV.mat)){
     train_accuracy_exp <- y_conv$eval(feed_dict = dict(x = batch[[1]],
                                                        y = batch[[2]],
                                                        keep_prob = 1.0))
-    
-    train.mat[j, "LogRMSE"] <- round(sqrt(train_accuracy), 8)
-    train.mat[j, "RMSE"] <- round(sqrt(mean((exp(batch[[2]]) -
-                                              exp(train_accuracy_exp)) ^ 2)), 8)
+    if(log.y == TRUE){
+      train.mat[j, "LogRMSE"] <- round(sqrt(train_accuracy), 8)
+      train.mat[j, "RMSE"] <- round(sqrt(mean((exp(batch[[2]]) -
+                                                 exp(train_accuracy_exp)) ^ 2)), 8)
+    } else {
+      train.mat[j, "LogRMSE"] <- round(sqrt(mean((log(batch[[2]]) -
+                                                    log(train_accuracy_exp)) ^ 2)), 8)
+      train.mat[j, "RMSE"] <- round(sqrt(train_accuracy), 8)
+    }
 
     cat(paste0("Step ", j, " LogRMSE: ", train.mat[j, "LogRMSE"],
                " | RMSE: ", train.mat[j, "RMSE"], "\n"))
@@ -273,12 +164,11 @@ for(i in 1:nrow(CV.mat)){
   # Need batches because of memory
   #######################################################
   if(!exists("test.batch")){
-    test.batch <- mini.batch(indices = 2821:3525, target.y = "Flux")
+    test.batch <- mini.batch(indices = last.train.ind:length(lf), lf = lf,
+                             target.y = "Flux", log.y = log.y)
   }
   num.test.samples <- nrow(test.batch[[1]])
   y_hat <- c()
-  expDiffs <- c()
-  Diffs <- c()
   for(j in 1:ceiling(num.test.samples / 200)){
     cat("Testing batch", j, "of", ceiling(num.test.samples / 200), "\n")
     inds <- 1:200 + (j - 1) * 200
@@ -290,10 +180,15 @@ for(i in 1:nrow(CV.mat)){
                                                               drop = F],
                                           keep_prob = 1.0))
     y_hat <- c(y_hat, testY)
-    expDiffs <- c(expDiffs, (exp(testY) - exp(test.batch[[2]])[inds, ]))
-    Diffs <- c(Diffs, testY - test.batch[[2]][inds, ])
   }
   # plot(test.batch[[2]], y_hat)
+  if(log.y == TRUE){
+    Diffs <- exp(testY) - exp(test.batch[[2]])
+    logDiffs <- testY - test.batch[[2]]
+  } else {
+    Diffs <- testY - test.batch[[2]]
+    logDiffs <- log(testY) - log(test.batch[[2]])
+  }
   
   CV.mat[i, "RMSE"] <- sqrt(mean(expDiffs ^ 2))
   CV.mat[i, "LogRMSE"] <- sqrt(mean(Diffs ^ 2))
@@ -304,8 +199,6 @@ write.csv(CV.mat, paste0("CNNcvPars_", Sys.Date(), ".csv"), row.names = FALSE)
 
 ################# CV.mat Analysis #################################
 
-
-
 CV.mat2 <- as.data.frame(CV.mat[order(CV.mat[, "TestMSE"]), -2])
 # CV.mat2$ProxyMSE <- 0
 # CV.mat2$ProxyMSE[which(CV.mat2$TestMSE > 1 & CV.mat2$TestMSE < 1.797693e+308)] <- 1
@@ -313,12 +206,3 @@ CV.mat2 <- as.data.frame(CV.mat[order(CV.mat[, "TestMSE"]), -2])
 # CV.mat3 <- CV.mat2[, -1]
 fit <- lm(TestMSE~., data = CV.mat2)
 sort(fit$coefficients)
-
-#    batch.size conv.window.size2           ksizeY1          strideY2 conv.window.size1       conv.depth1 
-# -0.0613137391     -0.0307389430     -0.0270840946     -0.0172186164     -0.0131294311     -0.0130427407 
-#      strideX1       conv.depth2           ksizeY2    strideXconv2D1    strideYconv2D1          strideX2 
-# -0.0108363520     -0.0104540655     -0.0078710257     -0.0057511216     -0.0001315979      0.0016007235 
-#      ksizeX2          strideY1     fcl.num.units           ksizeX1    strideYconv2D2    strideXconv2D2 
-# 0.0033911206      0.0048058836      0.0055628938      0.0103174749      0.0127500333      0.0186606277 
-#  (Intercept) 
-# 4.7224334879 

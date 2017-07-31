@@ -317,14 +317,16 @@ all.channel.index <- outer(format(all.channel.index.POSIX, "%Y%m%d_%H%M"),
 
 library(feather)
 
-for(i in 1663:3720){ #nrow(all.channel.index)){
+# Could parallelize if needed
+# Need to do error checking
+# Need to delete 343kb files
+for(i in 3562:3720){ #nrow(all.channel.index)){
   if(i %% 10 == 0){
     cat("Num", i, "of 3720\n")
   }
   big.mat <- matrix(NA, nrow = 1024*1024, ncol = 8)
-  for(j in 4:8){
-    temp <- astropy$io$fits$open(paste0("/home/thernandez/AIA2014/AIA",
-                                        all.channel.index[i, j], ".fits"))
+  for(j in 1:8){
+    temp <- astropy$io$fits$open(paste0("/home/thernandez/AIA2014/AIA", all.channel.index[i, j], ".fits"))
     temp$verify("fix")
     exp.time <- as.numeric(substring(strsplit(as.character(temp[[1]]$header),
                                               "EXPTIME")[[1]][2], 4, 12))
@@ -345,8 +347,23 @@ for(i in 1663:3720){ #nrow(all.channel.index)){
                        ".feather"))
 }
 
-big.mat <- read_feather(paste0("/home/thernandez/FeatherAIA2014/AIA",
-                               format(all.channel.index.POSIX[i], "%Y%m%d_%H%M"),
-                               ".feather"))
+# big.mat <- read_feather(paste0("/home/thernandez/FeatherAIA2014/AIA",
+#                                format(all.channel.index.POSIX[i], "%Y%m%d_%H%M"),
+#                                ".feather"))
 
-errors <- c(95, 715, 1662)
+errors <- c(95, 715, 1662, 1769:1793, 2502, 2503, 3133, 3342, 3436:3443, 3561)
+
+################################################################################
+#################### Synthesizing y.mat and feather files ####################
+
+lf <- list.files("/home/thernandez/FeatherAIA2014/")
+y.mat <- read.csv("/home/thernandez/Flux_2010_2017_allY.csv", stringsAsFactors = F)
+y.mat$Time <- as.POSIXct(y.mat$Time, tz = "UTC")
+
+lf.str <- substring(lf, 4, 16)
+y.mat.str <- as.character(format(y.mat$Time, "%Y%m%d_%H%M"))
+good.ind1 <- which(lf.str %in% y.mat.str)
+if(length(good.ind1) == length(lf.str)){cat("All feather files are in ymat!")}
+good.ind2 <- which(y.mat.str %in% lf.str)
+head(y.mat)
+write.csv(y.mat[good.ind2, ], "Flux_FeatherAIA2014.csv",row.names = FALSE)
