@@ -73,7 +73,7 @@ indexTo3Dmat <- function(channel.index, channels.used = c(3), feather = TRUE){
 # Use for each to parallelize
 mini.batch <- function(indices = 1:5,
                        lf = list.files("/home/thernandez/FeatherAIA2014/"),
-                       y.mat = read.csv("Flux_FeatherAIA2014.csv"),
+                       y.mat = read.csv("/home/thernandez/solar-forecast/datasets/Flux_FeatherAIA2014.csv"),
                        target.y = c("Flux", "Flux_1h_1h12m",
                                     "Flux_1h_2h", "Flux_1h_1d1h_top1"),
                        normalization.x = TRUE, normalization.y = FALSE,
