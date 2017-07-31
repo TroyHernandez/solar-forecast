@@ -1,14 +1,14 @@
 # create_AIA_index.R
 
 ###### Moving files #######################
-filename <- "Flux_2010_2017_allY.csv"
+filename <- "/home/thernandez/AIA/AIA201401*"
 
 cat(
 paste0("scp ", filename, " thernandez@",
-       c("10.184.143.161", "10.184.143.134", "10.184.143.148", "10.184.143.183",
-         "10.184.143.136", "10.184.143.174", "10.184.143.182", "10.184.143.178"),
-       ":/home/thernandez/\n")[1:3], "exit\n",
-paste0("nasa", 9:11, "\nsudo cp ", filename, " /data/sw/\nexit\n"))
+       c("10.184.143.161", "10.184.143.134", "10.184.143.148", "10.184.143.183"), #,
+         # "10.184.143.136", "10.184.143.174", "10.184.143.182", "10.184.143.178"),
+       ":/home/thernandez/AIA2014/\n")[1:3], "exit\n",
+paste0("nasa", 9:11, "\nsudo cp ", filename, " /data/sw/AIA2014/\nexit\n"))
 #######################################
 # Download AIA data
 
@@ -301,3 +301,52 @@ Plot_Monthly <- function(flux){
 
 Plot_Monthly(flux = flux)
 
+############## Convert to feather #############################
+library(reticulate)
+astropy <- import("astropy")
+lf <- list.files("/home/thernandez/AIA2014")
+
+all.channel.index.POSIX <- as.POSIXct(read.csv("/home/thernandez/AIA_index_allChannels.csv",
+                                               stringsAsFactors = FALSE)[[1]],
+                                      tz = "UTC")
+
+all.channel.index <- outer(format(all.channel.index.POSIX, "%Y%m%d_%H%M"),
+                           c("_0094", "_0131", "_0171", "_0193",
+                             "_0211", "_0304", "_0335", "_1600"),
+                           paste, sep = "")
+
+library(feather)
+
+for(i in 1663:3720){ #nrow(all.channel.index)){
+  if(i %% 10 == 0){
+    cat("Num", i, "of 3720\n")
+  }
+  big.mat <- matrix(NA, nrow = 1024*1024, ncol = 8)
+  for(j in 4:8){
+    temp <- astropy$io$fits$open(paste0("/home/thernandez/AIA2014/AIA",
+                                        all.channel.index[i, j], ".fits"))
+    temp$verify("fix")
+    exp.time <- as.numeric(substring(strsplit(as.character(temp[[1]]$header),
+                                              "EXPTIME")[[1]][2], 4, 12))
+    temp.mat <- temp[[1]]$data
+    temp.mat[temp.mat <= 0] <- 0
+    temp.mat <- temp.mat + 1
+    big.mat[, j] <- c(t(temp.mat / exp.time))
+    if(j == 3){
+      header <- as.character(temp[[1]]$header)
+      write.table(header, paste0("/home/thernandez/HeaderAIA2014/AIA",
+                                 all.channel.index[i, j], ".txt"),
+                  quote = FALSE, row.names = FALSE, col.names = FALSE)
+    }
+  }
+  write_feather(as.data.frame(big.mat),
+                paste0("/home/thernandez/FeatherAIA2014/AIA",
+                       format(all.channel.index.POSIX[i], "%Y%m%d_%H%M"),
+                       ".feather"))
+}
+
+big.mat <- read_feather(paste0("/home/thernandez/FeatherAIA2014/AIA",
+                               format(all.channel.index.POSIX[i], "%Y%m%d_%H%M"),
+                               ".feather"))
+
+errors <- c(95, 715, 1662)
