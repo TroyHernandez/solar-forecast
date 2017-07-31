@@ -153,7 +153,7 @@ for(i in 1:nrow(CV.mat)){
 
     cat(paste0("Step ", j, " LogRMSE: ", train.mat[j, "LogRMSE"],
                " | RMSE: ", train.mat[j, "RMSE"], "\n"))
-    if(round(train_accuracy, 8) == Inf | is.na(train_accuracy) | round(train_accuracy, 8) == 0){
+    if(round(train_accuracy, 8) == Inf | is.na(train_accuracy)){
       test.err.calc <- FALSE
       break()
     }
@@ -163,36 +163,41 @@ for(i in 1:nrow(CV.mat)){
   # Test against test set
   # Need batches because of memory
   #######################################################
-  if(!exists("test.batch")){
-    test.batch <- mini.batch(indices = last.train.ind:length(lf), lf = lf,
-                             target.y = "Flux", log.y = log.y)
-  }
-  num.test.samples <- nrow(test.batch[[1]])
-  y_hat <- c()
-  for(j in 1:ceiling(num.test.samples / 200)){
-    cat("Testing batch", j, "of", ceiling(num.test.samples / 200), "\n")
-    inds <- 1:200 + (j - 1) * 200
-    if(inds[length(inds)] > nrow(test.batch[[1]])){
-      inds <- inds[-which(inds > num.test.samples)]
-    }
-    testY <- y_conv$eval(feed_dict = dict(x = test.batch[[1]][inds, ],
-                                          y = test.batch[[2]][inds, 1,
-                                                              drop = F],
-                                          keep_prob = 1.0))
-    y_hat <- c(y_hat, testY)
-  }
-  # plot(test.batch[[2]], y_hat)
-  if(log.y == TRUE){
-    Diffs <- exp(testY) - exp(test.batch[[2]])
-    logDiffs <- testY - test.batch[[2]]
+  if(round(train_accuracy, 8) == Inf | is.na(train_accuracy)){
+    cat("This network did not converge.")
   } else {
-    Diffs <- testY - test.batch[[2]]
-    logDiffs <- log(testY) - log(test.batch[[2]])
+    if(!exists("test.batch")){
+      test.batch <- mini.batch(indices = last.train.ind:length(lf), lf = lf,
+                               target.y = "Flux", log.y = log.y)
+    }
+    
+    num.test.samples <- nrow(test.batch[[1]])
+    y_hat <- c()
+    for(j in 1:ceiling(num.test.samples / 200)){
+      cat("Testing batch", j, "of", ceiling(num.test.samples / 200), "\n")
+      inds <- 1:200 + (j - 1) * 200
+      if(inds[length(inds)] > nrow(test.batch[[1]])){
+        inds <- inds[-which(inds > num.test.samples)]
+      }
+      testY <- y_conv$eval(feed_dict = dict(x = test.batch[[1]][inds, ],
+                                            y = test.batch[[2]][inds, 1,
+                                                                drop = F],
+                                            keep_prob = 1.0))
+      y_hat <- c(y_hat, testY)
+    }
+    # plot(test.batch[[2]], y_hat)
+    if(log.y == TRUE){
+      Diffs <- exp(testY) - exp(test.batch[[2]])
+      logDiffs <- testY - test.batch[[2]]
+    } else {
+      Diffs <- testY - test.batch[[2]]
+      logDiffs <- log(testY) - log(test.batch[[2]])
+    }
+    
+    CV.mat[i, "RMSE"] <- sqrt(mean(expDiffs ^ 2))
+    CV.mat[i, "LogRMSE"] <- sqrt(mean(Diffs ^ 2))
+    cat("RMSE: ", CV.mat[i, "RMSE"], "LogRMSE: ", CV.mat[i, "LogRMSE"], "\n" )
   }
-  
-  CV.mat[i, "RMSE"] <- sqrt(mean(expDiffs ^ 2))
-  CV.mat[i, "LogRMSE"] <- sqrt(mean(Diffs ^ 2))
-  cat("RMSE: ", CV.mat[i, "RMSE"], "LogRMSE: ", CV.mat[i, "LogRMSE"], "\n" )
 }
 
 write.csv(CV.mat, paste0("CNNcvPars_", Sys.Date(), ".csv"), row.names = FALSE)
