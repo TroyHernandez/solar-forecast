@@ -3,17 +3,20 @@
 library(tensorflow)
 library(reticulate)
 library(feather)
-source("AIA2.R")
+source("/home/thernandez/solar-forecast/R/AIA2.R")
 # Create Data
-lf <- list.files("/home/thernandez/FeatherAIA2014/")
-y.mat <- read.csv("Flux_FeatherAIA2014.csv")
+# lf <- list.files("/home/thernandez/FeatherAIA2014/")
+y.mat <- read.csv("/home/thernandez/solar-forecast/datasets/Flux_FeatherAIA2014.csv")
+y.mat$Time <- as.POSIXct(y.mat$Time, tz = "UTC")
+# Creating file list from pre-approved y.mat times indices
+lf <- paste0("AIA", as.character(format(y.mat$Time, "%Y%m%d_%H%M")), ".feather")
 if(length(lf) == nrow(y.mat)){cat("Flux and AIA data matches.")}
 
 last.train.ind <- round(length(lf) * 4 / 5)
 #############################################################
 #############################################################
 sess <- tf$InteractiveSession()
-# sess <- tf$Session()
+# sess = tf$Session()
 
 x <- tf$placeholder(tf$float32, shape(NULL, as.integer(1048576)))
 y <- tf$placeholder(tf$float32, shape(NULL, 1L))

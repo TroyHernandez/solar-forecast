@@ -359,11 +359,13 @@ errors <- c(95, 715, 1662, 1769:1793, 2502, 2503, 3133, 3342, 3436:3443, 3561)
 lf <- list.files("/home/thernandez/FeatherAIA2014/")
 y.mat <- read.csv("/home/thernandez/Flux_2010_2017_allY.csv", stringsAsFactors = F)
 y.mat$Time <- as.POSIXct(y.mat$Time, tz = "UTC")
+bad.y <- which(is.na(y.mat$Flux))
+y.mat <- y.mat[-bad.y, ]
 
 lf.str <- substring(lf, 4, 16)
 y.mat.str <- as.character(format(y.mat$Time, "%Y%m%d_%H%M"))
-good.ind1 <- which(lf.str %in% y.mat.str)
-if(length(good.ind1) == length(lf.str)){cat("All feather files are in ymat!")}
-good.ind2 <- which(y.mat.str %in% lf.str)
-head(y.mat)
-write.csv(y.mat[good.ind2, ], "Flux_FeatherAIA2014.csv",row.names = FALSE)
+good.times <- intersect(lf.str, y.mat.str)
+good.ind <- which(y.mat.str %in% good.times)
+write.csv(y.mat[good.ind, ],
+          "~/solar-forecast/datasets/Flux_FeatherAIA2014.csv",
+          row.names = FALSE)
