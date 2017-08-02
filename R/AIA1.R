@@ -22,7 +22,7 @@ x <- tf$placeholder(tf$float32, shape(NULL, as.integer(1048576)))
 y <- tf$placeholder(tf$float32, shape(NULL, 1L))
 x_image <- tf$reshape(x, shape(-1L, 1024L, 1024L, 1L))
 
-CV.mat <- as.data.frame(matrix(0, nrow = 25, ncol = 22))
+CV.mat <- as.data.frame(matrix(0, nrow = 100, ncol = 22))
 colnames(CV.mat) <- c("LogRMSE", "RMSE",
                       "log.y", "learning.rate", "fcl.num.units", "batch.size",
                       "conv.window.size1", "conv.depth1",
@@ -52,8 +52,8 @@ CV.mat[, "ksizeX2"] = sample(2:64, nrow(CV.mat), replace = T)
 CV.mat[, "ksizeY2"] = sample(8:64, nrow(CV.mat), replace = T)
 CV.mat[, "strideX2"] = sample(2:64, nrow(CV.mat), replace = T)
 CV.mat[, "strideY2"] = sample(2:64, nrow(CV.mat), replace = T)
-
-for(i in 1:nrow(CV.mat)){
+start = 6
+for(i in start:nrow(CV.mat)){
   
   cat(paste0(colnames(CV.mat), ":", CV.mat[i, ]), "\n")
   set.seed(1)
@@ -190,15 +190,18 @@ for(i in 1:nrow(CV.mat)){
     }
     # plot(test.batch[[2]], y_hat)
     if(log.y == TRUE){
-      Diffs <- exp(testY) - exp(test.batch[[2]])
-      logDiffs <- testY - test.batch[[2]]
+      Diffs <- exp(y_hat) - exp(test.batch[[2]])
+      logDiffs <- y_hat - test.batch[[2]]
     } else {
-      Diffs <- testY - test.batch[[2]]
-      logDiffs <- log(testY) - log(test.batch[[2]])
+      if(length(sum(y_hat <= 0))){
+        y_hat[which(y_hat <= 0)] = min(test.batch[[2]])
+      }
+      Diffs <- y_hat - test.batch[[2]]
+      logDiffs <- log(y_hat) - log(test.batch[[2]])
     }
     
-    CV.mat[i, "RMSE"] <- sqrt(mean(expDiffs ^ 2))
-    CV.mat[i, "LogRMSE"] <- sqrt(mean(Diffs ^ 2))
+    CV.mat[i, "RMSE"] <- sqrt(mean(Diffs ^ 2))
+    CV.mat[i, "LogRMSE"] <- sqrt(mean(logDiffs ^ 2))
     cat("RMSE: ", CV.mat[i, "RMSE"], "LogRMSE: ", CV.mat[i, "LogRMSE"], "\n" )
   }
 }
